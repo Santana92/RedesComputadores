@@ -106,7 +106,7 @@ class AppCamadaFisica(tk.Tk):
         self.var_msg_ref_rx = tk.StringVar(value="")
         self.var_limiar = tk.DoubleVar(value=0.08)
         self.var_modo_teste_m1 = tk.BooleanVar(value=False)
-        self.var_duracao_fsk = tk.DoubleVar(value=4.0)
+        self.var_duracao_fsk = tk.DoubleVar(value=6.0)
 
         # Estado da Recepção em Tempo Real (Método 1)
         self.escutando_tempo_real_m1 = False
@@ -644,7 +644,7 @@ class AppCamadaFisica(tk.Tk):
 
         ttk.Label(f_botoes, text="Tempo de Escuta:").pack(side=tk.LEFT, padx=(0, 4))
         self.spin_dur_fsk = ttk.Spinbox(
-            f_botoes, from_=2.0, to=15.0, increment=0.5, textvariable=self.var_duracao_fsk, width=5
+            f_botoes, from_=2.0, to=20.0, increment=0.5, textvariable=self.var_duracao_fsk, width=5
         )
         self.spin_dur_fsk.pack(side=tk.LEFT, padx=(0, 15))
 
@@ -1091,14 +1091,28 @@ class AppCamadaFisica(tk.Tk):
         duracao = float(self.var_duracao_fsk.get())
 
         def tarefa():
-            self._definir_status(f"Escutando canal FSK pelo microfone ({duracao:.1f}s)...", "#fed7aa", "#9a3412")
+            self.after(0, lambda: self.btn_receber_fsk.config(
+                text=f"🎙️ ESCUTANDO ({duracao:.1f}s)...", state=tk.DISABLED, bg="#d97706"
+            ))
+            self._definir_status(
+                f"🎙️ Escutando microfone ({duracao:.1f}s)... AGUARDANDO TRANSMISSÃO FSK (Inicie no PC transmissor!)",
+                "#fef08a",
+                "#854d0e"
+            )
             self._log_diagnostico(f"\n[*] Gravando canal FSK pelo microfone ({duracao:.1f} segundos)...")
+            self._log_diagnostico("[*] Receptor ativo. Aguardando emissão do tom piloto de 1700 Hz...")
+
             try:
                 sinal = gravar_audio_microfone_fsk(duracao, sample_rate=44100)
+                self._definir_status("🔍 Áudio captado! Analisando espectro e buscando preâmbulo de 1700 Hz...", "#93c5fd", "#1e3a8a")
                 self._processar_fsk_recebido(sinal)
             except Exception as e:
                 self._definir_status(f"Erro ao capturar áudio FSK: {e}", "#fee2e2", "#991b1b")
                 self._log_diagnostico(f"[!] Falha na gravação do microfone: {e}")
+            finally:
+                self.after(0, lambda: self.btn_receber_fsk.config(
+                    text="🎙️ CAPTAR ÁUDIO FSK PELO MICROFONE", state=tk.NORMAL, bg="#15803d"
+                ))
 
         threading.Thread(target=tarefa, daemon=True).start()
 
@@ -1110,23 +1124,40 @@ class AppCamadaFisica(tk.Tk):
         self._processar_fsk_recebido(self.ultimo_audio_fsk)
 
     def _processar_fsk_recebido(self, sinal: np.ndarray):
-        bits_rx = decodificar_audio_fsk(sinal, sample_rate=44100)
+        bits_rx, diag = decodificar_audio_fsk(sinal, sample_rate=44100, retornar_diagnostico=True)
 
         if not bits_rx:
             self._log_diagnostico("[!] Nenhum sinal piloto FSK (1700 Hz) detectado no áudio capturado.")
-            self._definir_status("✗ Falha de Recepção: Nenhum tom FSK detectado no microfone!", "#fee2e2", "#991b1b")
+            self._log_diagnostico("    - O receptor ignorou o ruído ambiente para evitar decodificar dados inválidos.")
+            self._log_diagnostico("    - Dica: Verifique se a transmissão no PC transmissor ocorreu durante o tempo de escuta.")
+            self._definir_status("✗ Falha de Recepção: Nenhum preâmbulo FSK (1700 Hz) detectado no microfone!", "#fee2e2", "#991b1b")
             self.lbl_demod_fsk_info.config(
-                text="Demodulação FSK: Nenhum preâmbulo localizado no sinal capturado."
+                text="Demodulação FSK: Nenhum preâmbulo localizado no sinal capturado (ruído descartado)."
             )
             return
 
+        t_ini = diag.get("tempo_inicio_s", 0.0)
+        conf_med = diag.get("confianca_media", 0.0)
+        self._log_diagnostico(f"[✓] Preâmbulo FSK (1700 Hz) detectado com sucesso!")
+        self._log_diagnostico(f"    Sincronismo de dados alinhado em t = {t_ini:.3f}s | Confiança média: {conf_med:.1f}%")
         self._log_diagnostico(f"Bits demodulados do áudio ({len(bits_rx)} bits):\n{formatar_bits(bits_rx, 8)}")
+
+        # Log de diagnóstico com amostra dos símbolos
+        simbolos = diag.get("simbolos", [])
+        if simbolos:
+            self._log_diagnostico("--- Amostra do Diagnóstico Espectral dos Símbolos ---")
+            for s in simbolos[:8]:
+                f_nome = "2200 Hz" if s["bit"] == 1 else "1200 Hz"
+                self._log_diagnostico(f"  Símbolo {s['simbolo']:02d} [{s['tempo_s']:.3f}s] -> bit {s['bit']} ({f_nome}) | Confiança: {s['confianca']:.1f}%")
+            if len(simbolos) > 8:
+                self._log_diagnostico(f"  ... (+ {len(simbolos)-8} símbolos demodulados)")
+
         relatorio = decodificar_bits_metodo2(bits_rx)
 
         self._log_diagnostico(f"CRC-8 Calculado: {relatorio['crc_calculado']} | Recebido: {relatorio['crc_recebido']}")
         self._log_diagnostico(f"Status: {relatorio['status']}")
 
-        info_lbl = f"Demodulação: {len(bits_rx)} bits recuperados | CRC Calc: {relatorio['crc_calculado']} vs Rec: {relatorio['crc_recebido']}"
+        info_lbl = f"Demodulação: {len(bits_rx)} bits | Confiança: {conf_med:.1f}% | CRC Calc: {relatorio['crc_calculado']} vs Rec: {relatorio['crc_recebido']}"
         self.lbl_demod_fsk_info.config(text=info_lbl)
 
         if relatorio["sucesso"]:

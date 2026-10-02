@@ -2,7 +2,7 @@
 
 [![Licença MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python Version](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](https://www.python.org/)
-[![Status dos Testes](https://img.shields.io/badge/Testes%20Automatizados-26%20Aprovados%20(100%25)-success.svg)](#9-testes-e-validação)
+[![Status dos Testes](https://img.shields.io/badge/Testes%20Automatizados-27%20Aprovados%20(100%25)-success.svg)](#9-testes-e-validação)
 
 Trabalho prático da disciplina de **Redes de Computadores** focado no desenvolvimento, análise e validação experimental da **Camada Física** e subcamada de enlace lógico utilizando o **ar atmosférico e ondas acústicas** como meio de transmissão não guiado.
 
@@ -269,14 +269,15 @@ Quando o usuário produz impactos manuais para o transmissor FSK:
 - O pacote binário final é sintetizado em áudio FSK e reproduzido pelo alto-falante.
 
 ### 5.6. Recepção e Demodulação Espectral
-1. **Captura do Sinal:** O receptor grava o canal através do microfone.
-2. **Sincronização por Filtro Casado (*Matched Filter*):** O sinal é normalizado e submetido à correlação cruzada com o padrão senoidal do preâmbulo de $1700\text{ Hz}$. O pico da correlação determina com precisão de amostras o término do piloto e o início exato dos dados.
-3. **Rejeição de Ruído Puro:** Se a razão pico/fundo da correlação for inferior a $2.8$, o receptor rejeita o áudio como ruído ambiente desprovido de portadora FSK.
-4. **Demodulação Janela a Janela (DFT Pontual):** Para cada bloco de $25\text{ ms}$ ($1102$ amostras), calcula-se a energia nas duas portadoras:
-   $$E_0 = \left|\sum_{n=0}^{N-1} x[n] e^{-j 2\pi \frac{1200}{F_s} n}\right|^2, \quad E_1 = \left|\sum_{n=0}^{N-1} x[n] e^{-j 2\pi \frac{2200}{F_s} n}\right|^2$$
+1. **Captura do Sinal:** O receptor grava o canal através do microfone durante um tempo de escuta configurável (padrão de 6.0s a 8.0s), permitindo iniciar a escuta confortavelmente antes de acionar o transmissor.
+2. **Sincronização por Filtro Casado em Quadratura ($I/Q$):** O sinal normalizado é correlacionado em seno e cosseno com o padrão do preâmbulo de $1700\text{ Hz}$ em janelas ortogonais de $10\text{ ms}$ (441 amostras). A energia coerente $E = I^2 + Q^2$ é imune a rotações de fase provocadas pelo atraso acústico no ar.
+3. **Rejeição Estrita de Ruído Ambiente:** Exige que a pureza espectral do tom piloto seja $> 0.35$ de forma sustentada por pelo menos $75\text{ ms}$ ($\ge 50\%$ da duração do preâmbulo), descartando ruídos da sala e silêncios prévios.
+4. **Recuperação de Relógio e Alinhamento de Símbolo (*Symbol Timing Recovery*):** Ao detectar o fim do tom de $1700\text{ Hz}$, o receptor avalia uma faixa de $\pm 12\text{ ms}$ e busca o deslocamento temporal $\tau^*$ que maximiza o contraste de discriminação dos símbolos iniciais, centralizando as janelas de integração exatamente no meio de cada símbolo.
+5. **Demodulação Ponderada (DFT com Janela de Hann):** Para cada símbolo de $25\text{ ms}$ ($1102$ amostras), aplica-se uma janela de Hann ($w[n] = 0.5 - 0.5 \cos(\frac{2\pi n}{N-1})$) para suprimir transientes de borda e reverberações da sala, calculando a densidade espectral nas portadoras:
+   $$E_0 = \left|\sum_{n=0}^{N-1} (x[n] \cdot w[n]) e^{-j 2\pi \frac{1200}{F_s} n}\right|^2, \quad E_1 = \left|\sum_{n=0}^{N-1} (x[n] \cdot w[n]) e^{-j 2\pi \frac{2200}{F_s} n}\right|^2$$
    - Se $E_1 > E_0 \implies$ **Bit 1**.
    - Se $E_0 \ge E_1 \implies$ **Bit 0**.
-5. **Decodificação Autônoma:** Ao demodular os primeiros 8 bits (Byte 0 = tamanho $N$), o receptor determina dinamicamente quantos bits deve ler ($(N + 2) \times 8$ bits), ignorando ruídos gravados antes ou depois da transmissão.
+6. **Decodificação Autônoma e Delimitação:** Ao demodular os primeiros 8 bits (Byte 0 = tamanho $N$), o receptor determina dinamicamente o total exato de bits ($(1 + N + 1) \times 8$ bits), encerrando a leitura imediatamente após o último bit e ignorando qualquer ruído posterior.
 
 ### 5.7. Detecção de Erros com CRC-8
 O pacote recebido é submetido à validação de redundância cíclica:
@@ -367,7 +368,7 @@ Durante o ciclo de desenvolvimento e testes do projeto, diversos obstáculos té
 
 A qualidade e a conformidade do software foram validadas através de duas modalidades complementares: testes automatizados de unidade/integração e testes funcionais físicos.
 
-### 9.1. Testes Automatizados Executados (26 Aprovados — 100%)
+### 9.1. Testes Automatizados Executados (27 Aprovados — 100%)
 Executados diretamente no ambiente de desenvolvimento através do comando `python -m unittest discover tests -v`:
 
 1. `test_01_calculo_paridade_casos_oficiais`: Validação matemática dos exemplos oficiais exigidos pelo edital da atividade.
@@ -387,15 +388,16 @@ Executados diretamente no ambiente de desenvolvimento através do comando `pytho
 15. `test_08_demodulacao_autonoma_sem_tamanho_previo`: Demodulação FSK cega com silêncios de guarda inicial e final.
 16. `test_09_fluxo_metodo2_com_entrada_manual_de_impactos`: Teste de ponta a ponta do fluxo: Batidas $\to$ Bits $\to$ FSK $\to$ Demodulação $\to$ CRC-8 $\to$ Texto.
 17. `test_10_rejeicao_de_ruido_puro`: Rejeição de falso preâmbulo em sinais contendo exclusivamente ruído estocástico.
-18. `test_req_01_transmissao_sem_ruido`: Validação formal do Requisito 1 de avaliação.
-19. `test_req_02_transmissao_com_ruido`: Validação formal do Requisito 2 de avaliação.
-20. `test_req_03_mensagem_curta`: Validação formal do Requisito 3 (transmissão de mensagem curta `'A'`).
-21. `test_req_04_mensagem_maior`: Validação formal do Requisito 4 (transmissão de mensagem longa).
-22. `test_req_05_erro_proposital_em_um_bit`: Validação formal do Requisito 5 (injeção determinística de erro).
-23. `test_req_06_quadro_correto`: Validação formal do Requisito 6 (quadro íntegro aprovado).
-24. `test_req_07_quadro_corrompido`: Validação formal do Requisito 7 (quadro corrompido reprovado).
-25. `test_req_08_calculo_de_paridade`: Validação formal do Requisito 8 (regra de paridade par).
-26. `test_req_09_deteccao_erro_metodo2_crc8`: Validação formal do Requisito 9 (algoritmo CRC-8).
+18. `test_11_demodulacao_com_longo_atraso_e_ruido`: Simulação do teste físico real: início da escuta 2.5s antes da transmissão em canal acústico com ruído.
+19. `test_req_01_transmissao_sem_ruido`: Validação formal do Requisito 1 de avaliação.
+20. `test_req_02_transmissao_com_ruido`: Validação formal do Requisito 2 de avaliação.
+21. `test_req_03_mensagem_curta`: Validação formal do Requisito 3 (transmissão de mensagem curta `'A'`).
+22. `test_req_04_mensagem_maior`: Validação formal do Requisito 4 (transmissão de mensagem longa).
+23. `test_req_05_erro_proposital_em_um_bit`: Validação formal do Requisito 5 (injeção determinística de erro).
+24. `test_req_06_quadro_correto`: Validação formal do Requisito 6 (quadro íntegro aprovado).
+25. `test_req_07_quadro_corrompido`: Validação formal do Requisito 7 (quadro corrompido reprovado).
+26. `test_req_08_calculo_de_paridade`: Validação formal do Requisito 8 (regra de paridade par).
+27. `test_req_09_deteccao_erro_metodo2_crc8`: Validação formal do Requisito 9 (algoritmo CRC-8).
 
 ### 9.2. Testes Manuais Acústicos (com Alto-falante e Microfone no Ar)
 Os seguintes procedimentos funcionais foram planejados para execução presencial em bancada utilizando hardware real:
@@ -419,19 +421,20 @@ Os seguintes procedimentos funcionais foram planejados para execução presencia
 ---
 
 ## 10. Desenvolvimento Individual
-
+ 
 Este projeto foi concebido, arquitetado, implementado, testado e documentado **de forma estritamente individual** por um único aluno, sem divisão em equipes ou grupos.
-
-- **Autor do Projeto:** Lucas `[INSERIR SOBRENOME / R.A.]`
+ 
+- **Autor do Projeto:** Lucas Santana da Silva
+- **R.A.:** 2208504
 - **Curso:** Bacharelado em Ciência da Computação
 - **Disciplina:** Redes de Computadores
-
+ 
 ### Escopo das Atividades Conduzidas Individualmente:
 1. **Arquitetura Geral e Representação:** Estruturação dos módulos, conversão de dados (`conversao.py`) e fluxos de dados entre as camadas OSI 1 e 2.
 2. **Camada Física — Método 1:** Desenvolvimento da síntese senoidal amortecida de batidas (`transmissor.py`) e do detector de impactos em tempo real com máquina de estados, calibração dinâmica de ruído e debounce (`receptor.py`).
-3. **Camada Física — Método 2:** Implementação da modulação contínua CP-FSK com cálculo de taxas teóricas/práticas (`transmissor.py`), sincronização de quadro por filtro casado com tom piloto e demodulação espectral pontual via DFT (`receptor.py`), incluindo suporte a entrada manual por batidas.
+3. **Camada Física — Método 2:** Implementação da modulação contínua CP-FSK com cálculo de taxas teóricas/práticas (`transmissor.py`), sincronização de quadro por filtro casado não-coerente em quadratura $I/Q$ com tom piloto de 1700 Hz, recuperação de alinhamento de símbolos (*Symbol Timing Recovery*) e demodulação com janelamento de Hann (`receptor.py`), incluindo suporte a entrada manual por batidas.
 4. **Camada de Enlace Lógica:** Implementação e validação matemática da regra de Paridade Par em blocos de 9 bits, divisão polinomial do algoritmo CRC-8 padrão ATM (`0x07`) e rotina de injeção determinística de erro de bit (`deteccao_erros.py`).
-5. **Interface de Usuário e Testes:** Construção da interface gráfica completa em Tkinter e do modo terminal CLI (`interface.py`, `main.py`), elaboração e execução da suíte com 26 testes automatizados, bem como a gravação do vídeo demonstrativo e redação de toda a documentação técnica.
+5. **Interface de Usuário e Testes:** Construção da interface gráfica completa em Tkinter e do modo terminal CLI (`interface.py`, `main.py`), elaboração e execução da suíte com 27 testes automatizados, bem como a gravação do vídeo demonstrativo e redação de toda a documentação técnica.
 
 ---
 
@@ -448,8 +451,7 @@ Durante o desenvolvimento do trabalho, ferramentas de **Inteligência Artificial
 
 ### Responsabilidade e Domínio Técnico do Autor:
 - **Não Substituição do Aprendizado:** A utilização da IA não substituiu a compreensão ou a autoria do projeto. Cada algoritmo, função e parâmetro físico presente no código foi analisado, testado, ajustado e validado experimentalmente pelo autor.
-- **Domínio Integral da Implementação:** O autor compreende integralmente o funcionamento matemático e operacional de todos os módulos do sistema (amostragem, filtros, limiares, paridade, CRC-8, demodulação e interface), estando plenamente preparado para explicar e defender cada linha de código em arguições técnicas individuais durante a avaliação da disciplina.
-
+- **Domínio Integral da Implementação:** O autor compreende integralmente o funcionamento matemático e operacional de todos os módulos do sistema (amostragem, filtros, limiares, paridade, CRC-8, demodulação e interface).
 ---
 
 ## 12. Como Instalar e Executar o Projeto
@@ -461,7 +463,7 @@ Durante o desenvolvimento do trabalho, ferramentas de **Inteligência Artificial
 ### Passo 1: Clonar o Repositório
 ```bash
 git clone https://github.com/Santana92/RedesComputadores.git
-cd RedesComputadores/Atividade1
+cd Atividade1
 ```
 
 ### Passo 2: Instalar as Dependências

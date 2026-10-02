@@ -188,6 +188,36 @@ class TestMetodo2(unittest.TestCase):
         inicio = detectar_preambulo(ruido)
         self.assertIsNone(inicio, "Ruído puro não deve acionar falso-positivo de preâmbulo FSK.")
 
+    def test_11_demodulacao_com_longo_atraso_e_ruido(self):
+        """
+        Simula o cenário físico real: receptor começa a escutar 2.5 segundos antes
+        de o transmissor começar, em ambiente com ruído acústico de fundo.
+        """
+        msg = "OI"
+        bits_tx = codificar_mensagem_metodo2(msg)
+        audio_tx = sintetizar_bits_fsk(bits_tx)
+
+        # 2.5 segundos de ruído ambiente antes + sinal com ruído + 1.5 segundos de ruído depois
+        np.random.seed(42)
+        sample_rate = 44100
+        ruido_antes = np.random.normal(0, 0.02, int(sample_rate * 2.5)).astype(np.float32)
+        ruido_depois = np.random.normal(0, 0.02, int(sample_rate * 1.5)).astype(np.float32)
+        ruido_sinal = np.random.normal(0, 0.02, len(audio_tx)).astype(np.float32)
+
+        sinal_completo = np.concatenate([
+            ruido_antes,
+            audio_tx + ruido_sinal,
+            ruido_depois
+        ])
+
+        bits_rx, diag = decodificar_audio_fsk(sinal_completo, quantidade_bits=None, retornar_diagnostico=True)
+        relatorio = decodificar_bits_metodo2(bits_rx)
+
+        self.assertTrue(relatorio["sucesso"], f"Receptor deve sincronizar e validar CRC mesmo com 2.5s de atraso inicial. Status: {relatorio['status']}")
+        self.assertEqual(relatorio["mensagem"], msg)
+        self.assertGreater(diag["confianca_media"], 80.0)
+
 
 if __name__ == "__main__":
     unittest.main()
+
