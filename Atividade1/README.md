@@ -210,7 +210,7 @@ O Método 2 utiliza modulação por chaveamento de frequência com portadoras se
 Em vez de depender de eventos de impacto, o FSK transmite energia contínua em frequências predefinidas durante intervalos fixos de tempo denominados **janelas de símbolo**.
 
 ### 5.2. Parâmetros Físicos Reais Implementados no Código
-Verificados diretamente em [`src/metodo2_fsk/transmissor.py`](file:///C:/Users/lucas/Documents/Facul/Ciencias%20da%20Computa%C3%A7%C3%A3o/2026-2/Redes%20de%20Computadores/src/metodo2_fsk/transmissor.py):
+Verificados diretamente em [`src/metodo2_fsk/transmissor.py`]
 
 | Parâmetro | Constante no Código | Valor Real | Descrição Técnica |
 | :--- | :--- | :---: | :--- |
@@ -460,8 +460,8 @@ Durante o desenvolvimento do trabalho, ferramentas de **Inteligência Artificial
 
 ### Passo 1: Clonar o Repositório
 ```bash
-git clone https://github.com/SEU_USUARIO/redes-camada-fisica.git
-cd redes-camada-fisica
+git clone https://github.com/Santana92/RedesComputadores.git
+cd RedesComputadores/Atividade1
 ```
 
 ### Passo 2: Instalar as Dependências
