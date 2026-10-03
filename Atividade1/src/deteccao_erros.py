@@ -197,7 +197,7 @@ def desmontar_pacote_metodo2(pacote: bytes) -> Tuple[bool, bytes, int, int, str]
 def codificar_mensagem_metodo2(mensagem: str) -> List[int]:
     """
     Atalho: converte mensagem de texto em pacote com cabeçalho e CRC-8,
-    retornando a sequência completa de bits para transmissão FSK.
+    retornando a sequência completa de bits para transmissão do Método 2 (Duração).
     """
     dados = mensagem_para_bytes(mensagem)
     pacote = montar_pacote_metodo2(dados)
@@ -206,7 +206,7 @@ def codificar_mensagem_metodo2(mensagem: str) -> List[int]:
 
 def decodificar_bits_metodo2(bits: List[int]) -> Dict[str, Any]:
     """
-    Decodifica a lista de bits recebidos pelo receptor FSK,
+    Decodifica a lista de bits recebidos pelo receptor do Método 2 (Duração),
     valida o CRC-8 e reconstrói o texto original.
     """
     pacote_bytes = bits_para_bytes(bits)

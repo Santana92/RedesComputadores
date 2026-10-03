@@ -4,13 +4,20 @@
 # ==============================================================================
 
 """
-Receptor do Método 1 (Impacto / Batidas).
+Receptor do Método 1 (Quantidade de Impactos).
 
-Responsável por capturar o áudio do microfone em tempo real,
-detectar impactos sonoros físicos produzidos pelo usuário (palma, estalo, caneta, mesa),
-rejeitar reverberação via debounce e classificar os eventos em bits:
-- 1 batida isolada = BIT 0 (👏 -> 0)
-- 2 batidas consecutivas rápidas = BIT 1 (👏👏 -> 1)
+Responsável por capturar o áudio do microfone em tempo real e processar
+os impactos sonoros tanto em:
+1. TRANSMISSÃO AUTOMÁTICA: impactos gerados pelo computador e emitidos pelo alto-falante.
+2. TRANSMISSÃO MANUAL: impactos produzidos fisicamente pelo usuário (palmas, batidas
+   na mesa, estalos de dedos, cliques de caneta) captados diretamente pelo microfone.
+
+Em ambas as modalidades, a regra de interpretação é idêntica:
+- 1 batida isolada = BIT 0 (•)
+- 2 batidas consecutivas rápidas = BIT 1 (••)
+
+O receptor rejeita reverberações através de debounce adaptativo e monta
+quadros de 9 bits (8 bits de dados + 1 bit de paridade par).
 """
 
 import time
@@ -27,12 +34,15 @@ class DetectorBatidasTempoReal:
     """
     Detector contínuo de impactos acústicos em tempo real.
     
+    Funciona tanto para a Transmissão Automática (alto-falante) quanto
+    para a Transmissão Manual (palmas, batidas na mesa, caneta, estalos).
+    
     Recebe fluxo de áudio contínuo do microfone e emprega uma máquina de estados:
     - IDLE: Monitora o áudio aguardando amplitude superar o limiar.
     - WAITING_SECOND_TAP: Primeira batida detectada. Aguarda janela temporal (janela_dupla_s)
-      para verificar se o usuário realiza uma 2ª batida consecutiva.
-      * Se uma 2ª batida ocorrer (após debounce): emite BIT 1 (👏👏).
-      * Se o tempo expirar sem 2ª batida: emite BIT 0 (👏).
+      para verificar se ocorre uma 2ª batida consecutiva rápida.
+      * Se uma 2ª batida ocorrer (após debounce): emite BIT 1 (••).
+      * Se o tempo expirar sem 2ª batida: emite BIT 0 (•).
     """
 
     def __init__(
@@ -125,19 +135,20 @@ class DetectorBatidasTempoReal:
 
             # Se a janela de 350 ms expirou sem uma 2ª batida, confirmamos que foi 1 batida isolada = Bit 0
             if delta > self.janela_dupla_s:
-                self.callback_bit(0, "1 batida isolada (👏)")
+                self.callback_bit(0, "1 impacto isolado (•)")
+                self.tempo_refratario_ate = agora + 0.05
                 self.estado = "IDLE"
                 if self.callback_evento:
-                    self.callback_evento("BIT_EMITIDO", {"bit": 0, "descricao": "1 batida isolada (👏)"})
+                    self.callback_evento("BIT_EMITIDO", {"bit": 0, "descricao": "1 impacto isolado (•)", "simbolo": "•"})
 
             # Se uma 2ª batida ocorreu após o debounce (85 ms) e antes de expirar a janela, é Bit 1
             elif delta >= self.debounce_s and pico > self.limiar:
-                self.callback_bit(1, "2 batidas consecutivas (👏👏)")
+                self.callback_bit(1, "2 impactos consecutivos rápidos (••)")
                 # Aplicamos debounce refratário para não captar o eco da 2ª batida
                 self.tempo_refratario_ate = agora + self.debounce_s
                 self.estado = "IDLE"
                 if self.callback_evento:
-                    self.callback_evento("BIT_EMITIDO", {"bit": 1, "descricao": "2 batidas consecutivas (👏👏)"})
+                    self.callback_evento("BIT_EMITIDO", {"bit": 1, "descricao": "2 impactos consecutivos rápidos (••)", "simbolo": "••"})
 
         elif self.estado == "IDLE":
             # Aguardamos passar o período de debounce de qualquer evento anterior
@@ -243,9 +254,16 @@ def detectar_instantes_batidas(
 
 def classificar_batidas_em_bits(
     instantes_batidas: List[float],
-    limiar_consecutivo: float = 0.32
+    limiar_consecutivo: float = 0.35
 ) -> List[int]:
-    """Converte a sequência de batidas em bits: 2 consecutivas = 1, 1 isolada = 0."""
+    """
+    Converte a sequência temporal de instantes de impactos em bits:
+    - 2 impactos consecutivos rápidos (intervalo <= limiar_consecutivo) = BIT 1 (••)
+    - 1 impacto isolado (intervalo > limiar_consecutivo) = BIT 0 (•)
+
+    Aplica-se tanto a impactos gerados pelo alto-falante quanto a impactos
+    físicos manuais (palmas, batidas na mesa, estalos de dedos, batidas com caneta).
+    """
     bits = []
     i = 0
     total = len(instantes_batidas)

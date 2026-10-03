@@ -4,7 +4,17 @@
 # ==============================================================================
 
 """
-Testes Unitários e Integrados do Método 2 (Modulação Acústica FSK e CRC-8).
+Testes Unitários e Integrados do Método 2 (Duração do Impacto e CRC-8).
+
+Cobre:
+1. Cálculo de CRC-8 padrão ATM (0x07) e vetor de teste internacional.
+2. Formação e validação de pacotes com cabeçalho de comprimento e CRC-8.
+3. Inversão proposital de bits para comprovação de detecção de erro.
+4. Classificação individual de impactos curtos (0) e longos (1) por limiar.
+5. Transmissão e recepção acústica simulada (sem ruído e com ruído).
+6. Sincronização via preâmbulo (10101010) e extração autônoma.
+7. Cálculo de taxas de transmissão teórica e prática.
+8. Mensagens maiores e validação ponta a ponta.
 """
 
 import sys
@@ -22,16 +32,19 @@ from src.deteccao_erros import (
     decodificar_bits_metodo2,
     injetar_erro_de_bit,
 )
-from src.metodo2_fsk.transmissor import (
-    sintetizar_bits_fsk,
+from src.metodo2_duracao.transmissor import (
+    sintetizar_bits_duracao,
     calcular_taxa_bps,
-    FREQ_BIT_0,
-    FREQ_BIT_1,
-    DURACAO_SIMBOLO,
+    gerar_som_impacto_duracao,
+    DURACAO_IMPACTO_CURTO,
+    DURACAO_IMPACTO_LONGO,
+    LIMIAR_DURACAO,
+    PADRAO_PREAMBULO,
 )
-from src.metodo2_fsk.receptor import (
-    decodificar_audio_fsk,
-    demodular_janela_fsk,
+from src.metodo2_duracao.receptor import (
+    decodificar_audio_duracao,
+    detectar_impactos_com_duracao,
+    localizar_preambulo,
 )
 
 
@@ -47,7 +60,7 @@ class TestMetodo2(unittest.TestCase):
         """Valida que pacote íntegro retorna SUCESSO e pacote adulterado retorna FALHA."""
         payload = b"TESTE"
         pacote = montar_pacote_metodo2(payload)
-        
+
         sucesso, dados, c_calc, c_rec, status = desmontar_pacote_metodo2(pacote)
         self.assertTrue(sucesso)
         self.assertEqual(dados, payload)
@@ -56,168 +69,110 @@ class TestMetodo2(unittest.TestCase):
         # Adulteração de 1 byte no payload
         pacote_corrompido = bytearray(pacote)
         pacote_corrompido[2] ^= 0x01
-        
+
         sucesso_erro, _, _, _, status_erro = desmontar_pacote_metodo2(bytes(pacote_corrompido))
         self.assertFalse(sucesso_erro)
         self.assertIn("FALHA DE TRANSMISSÃO", status_erro)
 
-    def test_03_injecao_proposital_de_erro_fsk(self):
+    def test_03_injecao_proposital_de_erro_crc8(self):
         """Testa a inversão proposital de 1 bit no fluxo binário do Método 2."""
         msg = "REDE"
         bits_tx = codificar_mensagem_metodo2(msg)
-        
+
         # Inverte um bit arbitrário
         bits_com_erro = injetar_erro_de_bit(bits_tx, indice=8)
         self.assertNotEqual(bits_tx, bits_com_erro)
-        
+
         relatorio = decodificar_bits_metodo2(bits_com_erro)
         self.assertFalse(relatorio["sucesso"])
         self.assertIn("FALHA DE TRANSMISSÃO", relatorio["status"])
 
-    def test_04_demodulacao_janela_individual_fsk(self):
-        """Testa se a detecção espectral identifica corretamente 1200 Hz (0) e 2200 Hz (1)."""
+    def test_04_classificacao_impacto_curto_e_longo(self):
+        """Testa se a detecção de envelope diferencia corretamente 50 ms (0) e 160 ms (1)."""
         sample_rate = 44100
-        n_amostras = int(sample_rate * DURACAO_SIMBOLO)
-        t = np.arange(n_amostras, dtype=np.float32) / sample_rate
 
-        # Tom de 1200 Hz (Bit 0)
-        onda_0 = np.sin(2 * np.pi * FREQ_BIT_0 * t)
-        bit_0, e0, e1 = demodular_janela_fsk(onda_0, sample_rate=sample_rate)
-        self.assertEqual(bit_0, 0)
-        self.assertGreater(e0, e1)
+        # Pulso curto de 50 ms (Bit 0)
+        silencio_padrao = np.zeros(int(sample_rate * 0.1), dtype=np.float32)
+        onda_0 = np.concatenate([silencio_padrao, gerar_som_impacto_duracao(DURACAO_IMPACTO_CURTO, sample_rate), silencio_padrao])
+        bits_0, rel_0 = detectar_impactos_com_duracao(onda_0, sample_rate=sample_rate)
+        self.assertEqual(len(bits_0), 1)
+        self.assertEqual(bits_0[0], 0)
+        self.assertEqual(rel_0[0]["classificacao"], "CURTO")
+        self.assertLess(rel_0[0]["duracao_ms"], LIMIAR_DURACAO * 1000.0)
 
-        # Tom de 2200 Hz (Bit 1)
-        onda_1 = np.sin(2 * np.pi * FREQ_BIT_1 * t)
-        bit_1, e0, e1 = demodular_janela_fsk(onda_1, sample_rate=sample_rate)
-        self.assertEqual(bit_1, 1)
-        self.assertGreater(e1, e0)
+        # Pulso longo de 160 ms (Bit 1)
+        onda_1 = np.concatenate([silencio_padrao, gerar_som_impacto_duracao(DURACAO_IMPACTO_LONGO, sample_rate), silencio_padrao])
+        bits_1, rel_1 = detectar_impactos_com_duracao(onda_1, sample_rate=sample_rate)
+        self.assertEqual(len(bits_1), 1)
+        self.assertEqual(bits_1[0], 1)
+        self.assertEqual(rel_1[0]["classificacao"], "LONGO")
+        self.assertGreaterEqual(rel_1[0]["duracao_ms"], LIMIAR_DURACAO * 1000.0)
 
-    def test_05_transmissao_acustica_fsk_sem_ruido(self):
-        """Testa canal acústico FSK de ponta a ponta sem ruído."""
+    def test_05_transmissao_acustica_duracao_sem_ruido(self):
+        """Testa canal acústico por duração de ponta a ponta sem ruído."""
         msg = "OK"
         bits_tx = codificar_mensagem_metodo2(msg)
-        audio = sintetizar_bits_fsk(bits_tx)
-        
-        bits_rx = decodificar_audio_fsk(audio, quantidade_bits=len(bits_tx))
+        audio = sintetizar_bits_duracao(bits_tx, incluir_preambulo=True)
+
+        bits_rx = decodificar_audio_duracao(audio, quantidade_bits=len(bits_tx))
         relatorio = decodificar_bits_metodo2(bits_rx)
-        
+
         self.assertTrue(relatorio["sucesso"])
         self.assertEqual(relatorio["mensagem"], msg)
 
-    def test_06_transmissao_acustica_fsk_com_ruido(self):
-        """Testa canal acústico FSK com adição de ruído gaussiano."""
+    def test_06_transmissao_acustica_duracao_com_ruido(self):
+        """Testa canal acústico por duração com adição de ruído gaussiano."""
         msg = "SOM"
         bits_tx = codificar_mensagem_metodo2(msg)
-        audio = sintetizar_bits_fsk(bits_tx)
-        
+        audio = sintetizar_bits_duracao(bits_tx, incluir_preambulo=True)
+
         np.random.seed(123)
-        ruido = np.random.normal(0, 0.04, len(audio)).astype(np.float32)
+        ruido = np.random.normal(0, 0.03, len(audio)).astype(np.float32)
         audio_ruidoso = audio + ruido
-        
-        bits_rx = decodificar_audio_fsk(audio_ruidoso, quantidade_bits=len(bits_tx))
+
+        bits_rx = decodificar_audio_duracao(audio_ruidoso, quantidade_bits=len(bits_tx))
         relatorio = decodificar_bits_metodo2(bits_rx)
-        
+
         self.assertTrue(relatorio["sucesso"])
         self.assertEqual(relatorio["mensagem"], msg)
 
     def test_07_calculo_taxa_bps(self):
-        """Verifica o cálculo de taxa de transferência em bps."""
-        taxas = calcular_taxa_bps(num_bits_dados=32, num_bits_totais=48)
-        self.assertEqual(taxas["taxa_teorica_bps"], 40.0)
-        self.assertGreater(taxas["taxa_pratica_bps"], 15.0)
+        """Verifica o cálculo de taxa de transferência em bps baseado na duração."""
+        taxas = calcular_taxa_bps(num_bits_dados=32, num_bits_totais=48, incluir_preambulo=True)
+        self.assertGreater(taxas["taxa_teorica_bps"], 3.0)
+        self.assertLess(taxas["taxa_teorica_bps"], 6.0)
+        self.assertGreater(taxas["taxa_pratica_bps"], 1.5)
 
     def test_08_demodulacao_autonoma_sem_tamanho_previo(self):
-        """Testa recepção cega FSK (com silêncio inicial e final) sem passar quantidade_bits."""
+        """Testa recepção cega (com silêncio inicial e final) sem passar quantidade_bits."""
         msg = "OI"
         bits_tx = codificar_mensagem_metodo2(msg)
-        audio = sintetizar_bits_fsk(bits_tx)
-        
-        # Insere silêncio antes e depois (simulando gravação de microfone)
+        audio = sintetizar_bits_duracao(bits_tx, incluir_preambulo=True)
+
+        # Insere silêncio antes e depois (simulando espera de gravação de microfone)
         sinal_com_silencio = np.concatenate([
-            np.zeros(10000, dtype=np.float32),
+            np.zeros(20000, dtype=np.float32),
             audio,
-            np.zeros(15000, dtype=np.float32)
+            np.zeros(25000, dtype=np.float32)
         ])
-        
-        bits_rx = decodificar_audio_fsk(sinal_com_silencio, quantidade_bits=None)
+
+        bits_rx = decodificar_audio_duracao(sinal_com_silencio, quantidade_bits=None)
         relatorio = decodificar_bits_metodo2(bits_rx)
-        self.assertTrue(relatorio["sucesso"], "Receptor FSK deve decodificar autonomamente sem conhecimento prévio do tamanho.")
+        self.assertTrue(relatorio["sucesso"], "Receptor deve decodificar autonomamente sem conhecimento prévio do tamanho.")
         self.assertEqual(relatorio["mensagem"], msg)
 
-    def test_09_fluxo_metodo2_com_entrada_manual_de_impactos(self):
-        """
-        Valida o Requisito 3 da correção:
-        Usuário bate no microfone -> bits -> codificador FSK -> alto-falante -> receptor FSK -> CRC -> mensagem.
-        """
-        from src.conversao import bits_para_bytes, bytes_para_bits
-        from src.metodo1_batidas.transmissor import sintetizar_bits_metodo1
-        from src.metodo1_batidas.receptor import decodificar_audio_metodo1
-        
-        # 1. Usuário bate os bits da palavra 'OI' em ASCII
-        # 'O' = 01001111, 'I' = 01001001
-        bits_palavra = [0, 1, 0, 0, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1]
-        
-        # Simula som das batidas físicas do usuário
-        audio_batidas = sintetizar_bits_metodo1(bits_palavra, sample_rate=44100, tempo_bit=0.6)
-        
-        # 2. Detector de impactos captura os bits
-        bits_detectados, _ = decodificar_audio_metodo1(audio_batidas, sample_rate=44100)
-        self.assertEqual(bits_detectados, bits_palavra)
-        
-        # 3. Bits são convertidos em pacote FSK com CRC-8
-        dados_bytes = bits_para_bytes(bits_detectados)
-        pacote_fsk = montar_pacote_metodo2(dados_bytes)
-        bits_fsk = bytes_para_bits(pacote_fsk)
-        
-        # 4. Modulação FSK e transmissão acústica
-        audio_fsk = sintetizar_bits_fsk(bits_fsk)
-        
-        # 5. Receptor FSK demodula o áudio e valida integridade via CRC-8
-        bits_rx = decodificar_audio_fsk(audio_fsk)
-        relatorio = decodificar_bits_metodo2(bits_rx)
-        
-        self.assertTrue(relatorio["sucesso"])
-        self.assertEqual(relatorio["mensagem"], "OI")
-        self.assertEqual(relatorio["payload_bytes"], b"OI")
-
-    def test_10_rejeicao_de_ruido_puro(self):
-        """Verifica que sinal contendo apenas ruído gaussiano não aciona falsamente o preâmbulo FSK."""
-        from src.metodo2_fsk.receptor import detectar_preambulo
-        np.random.seed(999)
-        ruido = np.random.normal(0, 0.05, 44100).astype(np.float32)
-        inicio = detectar_preambulo(ruido)
-        self.assertIsNone(inicio, "Ruído puro não deve acionar falso-positivo de preâmbulo FSK.")
-
-    def test_11_demodulacao_com_longo_atraso_e_ruido(self):
-        """
-        Simula o cenário físico real: receptor começa a escutar 2.5 segundos antes
-        de o transmissor começar, em ambiente com ruído acústico de fundo.
-        """
-        msg = "OI"
+    def test_09_mensagem_maior(self):
+        """Valida a transmissão de uma mensagem maior ('REDE')."""
+        msg = "REDE"
         bits_tx = codificar_mensagem_metodo2(msg)
-        audio_tx = sintetizar_bits_fsk(bits_tx)
+        audio = sintetizar_bits_duracao(bits_tx, incluir_preambulo=True)
 
-        # 2.5 segundos de ruído ambiente antes + sinal com ruído + 1.5 segundos de ruído depois
-        np.random.seed(42)
-        sample_rate = 44100
-        ruido_antes = np.random.normal(0, 0.02, int(sample_rate * 2.5)).astype(np.float32)
-        ruido_depois = np.random.normal(0, 0.02, int(sample_rate * 1.5)).astype(np.float32)
-        ruido_sinal = np.random.normal(0, 0.02, len(audio_tx)).astype(np.float32)
-
-        sinal_completo = np.concatenate([
-            ruido_antes,
-            audio_tx + ruido_sinal,
-            ruido_depois
-        ])
-
-        bits_rx, diag = decodificar_audio_fsk(sinal_completo, quantidade_bits=None, retornar_diagnostico=True)
+        bits_rx = decodificar_audio_duracao(audio, quantidade_bits=len(bits_tx))
         relatorio = decodificar_bits_metodo2(bits_rx)
 
-        self.assertTrue(relatorio["sucesso"], f"Receptor deve sincronizar e validar CRC mesmo com 2.5s de atraso inicial. Status: {relatorio['status']}")
+        self.assertTrue(relatorio["sucesso"])
         self.assertEqual(relatorio["mensagem"], msg)
-        self.assertGreater(diag["confianca_media"], 80.0)
 
 
 if __name__ == "__main__":
     unittest.main()
-

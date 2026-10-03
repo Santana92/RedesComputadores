@@ -36,7 +36,11 @@ from src.deteccao_erros import (
     injetar_erro_de_bit,
 )
 from src.metodo1_batidas.transmissor import sintetizar_bits_metodo1
-from src.metodo1_batidas.receptor import decodificar_audio_metodo1
+from src.metodo1_batidas.receptor import (
+    decodificar_audio_metodo1,
+    classificar_batidas_em_bits,
+    DetectorBatidasTempoReal,
+)
 
 
 class TestMetodo1(unittest.TestCase):
@@ -143,6 +147,85 @@ class TestMetodo1(unittest.TestCase):
         self.assertEqual(bits_para_mensagem(dados_rx), msg)
         self.assertEqual(relatorio[0]["paridade_recebida"], 1)
         self.assertEqual(relatorio[1]["paridade_recebida"], 1)
+
+    def test_08_entrada_manual_um_impacto_vira_zero(self):
+        """Valida que 1 impacto físico isolado é decodificado como bit 0."""
+        # 1 único impacto em t = 1.0s
+        instantes = [1.0]
+        bits = classificar_batidas_em_bits(instantes, limiar_consecutivo=0.35)
+        self.assertEqual(bits, [0], "1 impacto isolado DEVE produzir o bit 0.")
+
+    def test_09_entrada_manual_dois_impactos_rapidos_vira_um(self):
+        """Valida que 2 impactos físicos consecutivos rápidos são decodificados como bit 1."""
+        # 2 impactos rápidos em t = 1.0s e t = 1.15s (delta = 150 ms <= 350 ms)
+        instantes = [1.0, 1.15]
+        bits = classificar_batidas_em_bits(instantes, limiar_consecutivo=0.35)
+        self.assertEqual(bits, [1], "2 impactos rápidos consecutivos DEVEM produzir o bit 1.")
+
+    def test_10_entrada_manual_sequencia_fisica_caractere_a(self):
+        """
+        Simula a produção física de impactos pelo usuário para transmitir o caractere 'A':
+        'A' em ASCII (65) = 01000001
+        Cálculo da paridade par: soma dos 1s = 2 (par) -> 9º bit (paridade) = 0
+        Quadro de 9 bits resultante: 0, 1, 0, 0, 0, 0, 0, 1, 0
+        Sequência física:
+          Bit 1 (0): 1 impacto (•)
+          Bit 2 (1): 2 impactos rápidos (••)
+          Bit 3 (0): 1 impacto (•)
+          Bit 4 (0): 1 impacto (•)
+          Bit 5 (0): 1 impacto (•)
+          Bit 6 (0): 1 impacto (•)
+          Bit 7 (0): 1 impacto (•)
+          Bit 8 (1): 2 impactos rápidos (••)
+          Bit 9 (0): 1 impacto de paridade par (•)
+        """
+        instantes_produzidos = [
+            0.50,         # Bit 1 = 0 (1 impacto)
+            1.20, 1.35,   # Bit 2 = 1 (2 impactos rápidos, delta 150 ms)
+            2.10,         # Bit 3 = 0 (1 impacto)
+            2.80,         # Bit 4 = 0 (1 impacto)
+            3.50,         # Bit 5 = 0 (1 impacto)
+            4.20,         # Bit 6 = 0 (1 impacto)
+            4.90,         # Bit 7 = 0 (1 impacto)
+            5.60, 5.75,   # Bit 8 = 1 (2 impactos rápidos, delta 150 ms)
+            6.50,         # Bit 9 = 0 (1 impacto - Paridade Par)
+        ]
+
+        bits_recuperados = classificar_batidas_em_bits(instantes_produzidos, limiar_consecutivo=0.35)
+        esperado_9_bits = [0, 1, 0, 0, 0, 0, 0, 1, 0]
+        self.assertEqual(bits_recuperados, esperado_9_bits, "Os 9 bits decodificados dos impactos devem bater exatamente.")
+
+        # Validação do quadro e decodificação do caractere
+        sucesso, dados, p_esp, p_rec = verificar_quadro_metodo1(bits_recuperados)
+        self.assertTrue(sucesso, "O quadro montado a partir dos impactos manuais deve ser válido na paridade par.")
+        self.assertEqual(p_rec, 0)
+        self.assertEqual(p_esp, 0)
+        self.assertEqual(bits_para_mensagem(dados), "A", "A mensagem recuperada das batidas manuais deve ser 'A'.")
+
+    def test_11_entrada_manual_deteccao_erro_paridade(self):
+        """Testa se um erro de batida manual (ex: uma batida a mais gerando bit 1) é detectado pela paridade."""
+        # Suponha que o usuário cometeu um erro e o quadro resultante foi [1, 1, 0, 0, 0, 0, 0, 1, 0]
+        # (3 uns nos dados, mas paridade veio como 0)
+        quadro_com_erro = [1, 1, 0, 0, 0, 0, 0, 1, 0]
+        sucesso, dados, p_esp, p_rec = verificar_quadro_metodo1(quadro_com_erro)
+        self.assertFalse(sucesso, "Quadro com quantidade ímpar de uns e bit de paridade 0 DEVE acusar falha de paridade.")
+        self.assertEqual(p_esp, 1)
+        self.assertEqual(p_rec, 0)
+
+    def test_12_detector_tempo_real_estrutura_e_callbacks(self):
+        """Verifica se o detector de tempo real instancia, aceita ajuste de limiar e manipula callbacks."""
+        bits_captados = []
+        detector = DetectorBatidasTempoReal(
+            callback_bit=lambda b, d: bits_captados.append(b),
+            limiar=0.08,
+            debounce_s=0.085,
+            janela_dupla_s=0.35,
+        )
+        self.assertEqual(detector.limiar, 0.08)
+        detector.definir_limiar(0.12)
+        self.assertAlmostEqual(detector.limiar, 0.12)
+        self.assertEqual(detector.estado, "IDLE")
+        self.assertFalse(detector.ativo)
 
 
 if __name__ == "__main__":

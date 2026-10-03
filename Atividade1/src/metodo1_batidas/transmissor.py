@@ -22,8 +22,8 @@ def gerar_som_batida(
     fator_amortecimento: float = 0.007
 ) -> np.ndarray:
     """
-    Gera a forma de onda de uma batida de impacto sintética (semelhante
-    a uma caneta batendo na mesa ou estalo de dedos).
+    Gera a forma de onda de um impacto acústico percussivo sintetizado
+    pelo computador para reprodução no alto-falante.
     
     Usa uma oscilação amortecida com decaimento exponencial rápido.
     """
@@ -32,7 +32,7 @@ def gerar_som_batida(
     
     # Envelope de decaimento exponencial:
     # Foi escolhida a frequência de 900 Hz com decaimento de 7 ms para que o som soe
-    # exatamente como um clique seco de caneta ou estalo, fácil de detectar pelo microfone.
+    # como um clique acústico seco e nítido, fácil de detectar pelo microfone.
     envelope = np.exp(-t / fator_amortecimento)
     
     # Onda senoidal com decaimento + componente de transiente

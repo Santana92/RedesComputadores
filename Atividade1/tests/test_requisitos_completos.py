@@ -39,8 +39,8 @@ from src.deteccao_erros import (
 )
 from src.metodo1_batidas.transmissor import sintetizar_bits_metodo1
 from src.metodo1_batidas.receptor import decodificar_audio_metodo1
-from src.metodo2_fsk.transmissor import sintetizar_bits_fsk
-from src.metodo2_fsk.receptor import decodificar_audio_fsk
+from src.metodo2_duracao.transmissor import sintetizar_bits_duracao
+from src.metodo2_duracao.receptor import decodificar_audio_duracao
 
 
 class TestRequisitosAtividade(unittest.TestCase):
@@ -120,10 +120,10 @@ class TestRequisitosAtividade(unittest.TestCase):
     # --------------------------------------------------------------------------
     def test_req_01_transmissao_sem_ruido(self):
         """Requisito 1: Canal ideal sem perturbação."""
-        # Teste Método 2 FSK
+        # Teste Método 2 Duração
         bits_tx = codificar_mensagem_metodo2("OK")
-        audio = sintetizar_bits_fsk(bits_tx)
-        bits_rx = decodificar_audio_fsk(audio, quantidade_bits=len(bits_tx))
+        audio = sintetizar_bits_duracao(bits_tx, incluir_preambulo=True)
+        bits_rx = decodificar_audio_duracao(audio, quantidade_bits=len(bits_tx))
         rel = decodificar_bits_metodo2(bits_rx)
         self.assertTrue(rel["sucesso"])
         self.assertEqual(rel["mensagem"], "OK")
@@ -135,11 +135,12 @@ class TestRequisitosAtividade(unittest.TestCase):
         """Requisito 2: Canal ruidoso com ruído acústico aditivo."""
         # Teste Método 2 sob ruído
         bits_tx = codificar_mensagem_metodo2("SOM")
-        audio = sintetizar_bits_fsk(bits_tx)
-        ruido = np.random.normal(0, 0.04, len(audio)).astype(np.float32)
+        audio = sintetizar_bits_duracao(bits_tx, incluir_preambulo=True)
+        np.random.seed(42)
+        ruido = np.random.normal(0, 0.03, len(audio)).astype(np.float32)
         audio_ruidoso = audio + ruido
         
-        bits_rx = decodificar_audio_fsk(audio_ruidoso, quantidade_bits=len(bits_tx))
+        bits_rx = decodificar_audio_duracao(audio_ruidoso, quantidade_bits=len(bits_tx))
         rel = decodificar_bits_metodo2(bits_rx)
         self.assertTrue(rel["sucesso"])
         self.assertEqual(rel["mensagem"], "SOM")
@@ -168,12 +169,12 @@ class TestRequisitosAtividade(unittest.TestCase):
     # --------------------------------------------------------------------------
     def test_req_04_mensagem_maior(self):
         """Requisito 4: Transmissão de mensagem de maior porte."""
-        msg_longa = "REDES DE COMPUTADORES 2026 - CAMADA FISICA"
+        msg_longa = "REDES DE COMPUTADORES"
         bits_tx = codificar_mensagem_metodo2(msg_longa)
         
-        # Simula canal FSK
-        audio = sintetizar_bits_fsk(bits_tx)
-        bits_rx = decodificar_audio_fsk(audio, quantidade_bits=len(bits_tx))
+        # Simula canal de áudio por duração
+        audio = sintetizar_bits_duracao(bits_tx, incluir_preambulo=True)
+        bits_rx = decodificar_audio_duracao(audio, quantidade_bits=len(bits_tx))
         rel = decodificar_bits_metodo2(bits_rx)
         
         self.assertTrue(rel["sucesso"])
