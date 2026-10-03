@@ -362,7 +362,10 @@ O autor **Lucas Santana da Silva** é integralmente responsável pelo projeto fi
 
 ### Instalação
 ```bash
-git clone https://github.com/Santana92RedesComutadores
+git clone https://github.com/Santana92/RedesComutadores
+```
+
+```bash
 cd Atividade1
 pip install -r requirements.txt
 ```
