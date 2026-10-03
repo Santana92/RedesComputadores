@@ -360,11 +360,12 @@ O autor **Lucas Santana da Silva** é integralmente responsável pelo projeto fi
 - Python 3.10 ou superior.
 - Placa de som com microfone e alto-falante configurados.
 
-### Instalação
+### Clonagem
 ```bash
-git clone https://github.com/Santana92/RedesComutadores
+git clone https://github.com/Santana92/RedesComputadores
 ```
 
+### Instalação
 ```bash
 cd Atividade1
 pip install -r requirements.txt
