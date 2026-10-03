@@ -10,9 +10,7 @@ Trabalho prático da disciplina de **Redes de Computadores** focado no desenvolv
 
 ## 📹 Vídeo de Demonstração
 
-- **Vídeo de Demonstração (Apresentação Individual):** `[INSERIR LINK DO VÍDEO NO YOUTUBE - 3 A 7 MINUTOS]`
-- **Thumbnail / Prévia:**  
-  *(Espaço reservado para inserção da imagem de prévia da gravação individual)*
+- **Vídeo de Demonstração (Apresentação Individual):** `https://youtu.be/IG5rzSu0xuk`
 
 ---
 
