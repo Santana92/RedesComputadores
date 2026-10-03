@@ -10,10 +10,9 @@ Trabalho prático da disciplina de **Redes de Computadores** focado no desenvolv
 
 ## 📹 Vídeo de Demonstração
 
-- **Vídeo de Demonstração (Apresentação Individual):** `https://youtu.be/IG5rzSu0xuk`
+- **Vídeo de Demonstração:** https://youtu.be/IG5rzSu0xuk
 - **Thumbnail / Prévia:**  
-  ![Preview](./assets/preview_video.png)
-
+  <img src="./assets/preview_video.png" alt="Prévia do projeto" width="500">
 
 ---
 
